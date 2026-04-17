@@ -19,7 +19,7 @@ bucket_name = "frameshot-thumbnails"
 
 # Environment variables
 [vars]
-CONTAINER_URL = "https://frameshot-processor.your-account.workers.dev"
+CONTAINER_URL = "https://frameshot-processor.vod-mates.workers.dev"
 MAX_FREE_REQUESTS = "50"
 MAX_PRO_REQUESTS = "5000"
 MAX_SCALE_REQUESTS = "50000"
