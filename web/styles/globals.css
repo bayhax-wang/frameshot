@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: #0a0a0f;
+  color: #ffffff;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #12121a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Code syntax highlighting theme */
+.hljs {
+  background: #1a1a25 !important;
+  color: #e5e7eb !important;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.hljs-keyword {
+  color: #c084fc !important;
+}
+
+.hljs-string {
+  color: #34d399 !important;
+}
+
+.hljs-number {
+  color: #fbbf24 !important;
+}
+
+.hljs-comment {
+  color: #71717a !important;
+}
+
+.hljs-title {
+  color: #60a5fa !important;
+}
+
+.hljs-attr {
+  color: #f87171 !important;
+}

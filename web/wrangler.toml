@@ -1,0 +1,13 @@
+name = "frameshot-web"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+compatibility_date = "2024-01-01"
+
+[[env.production.assets]]
+bucket = "./dist"
+binding = "ASSETS"
+
+[env.production.vars]
+ENVIRONMENT = "production"
