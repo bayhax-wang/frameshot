@@ -36,9 +36,40 @@ export default {
         if (response.ok) {
           const result = await response.json();
           
-          // If the container returned a local file path or buffer,
-          // we would upload it to R2 here and update the URL
-          // For now, pass through the response
+          if (result.success && result.image_data) {
+            try {
+              // Convert base64 to buffer
+              const imageBuffer = Uint8Array.from(atob(result.image_data), c => c.charCodeAt(0));
+              
+              // Upload to R2
+              const key = `thumbnails/${result.filename}`;
+              await env.THUMBNAILS.put(key, imageBuffer, {
+                httpMetadata: {
+                  contentType: `image/${result.format}`
+                }
+              });
+              
+              // Generate public URL using image proxy Worker
+              const thumbnailUrl = `https://frameshot-images.vod-mates.workers.dev/${key}`;
+              
+              return new Response(JSON.stringify({ 
+                thumbnail_url: thumbnailUrl,
+                size: result.size,
+                format: result.format
+              }), {
+                headers: { 'Content-Type': 'application/json' }
+              });
+            } catch (uploadError) {
+              console.error('R2 upload failed:', uploadError);
+              return new Response(JSON.stringify({ 
+                error: 'Upload to storage failed',
+                details: uploadError.message
+              }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+          }
           
           return new Response(JSON.stringify(result), {
             headers: { 'Content-Type': 'application/json' }

@@ -86,14 +86,19 @@ app.post('/extract', upload.single('file'), async (req, res) => {
         .on('error', reject);
     });
 
-    // Upload to R2 (simulated - in real deployment, use R2 API)
+    // Read the generated thumbnail
     const thumbnailBuffer = await fs.readFile(outputPath);
     
-    // For now, return a placeholder URL
-    // In real deployment, upload to R2 and return actual URL
-    const thumbnailUrl = `https://r2.frameshot.dev/${outputFilename}`;
-
-    res.json({ thumbnail_url: thumbnailUrl });
+    // Return the image buffer as base64
+    const thumbnailBase64 = thumbnailBuffer.toString('base64');
+    
+    res.json({ 
+      success: true,
+      image_data: thumbnailBase64,
+      filename: outputFilename,
+      format: format,
+      size: thumbnailBuffer.length
+    });
 
   } catch (error) {
     console.error('Extract error:', error);
