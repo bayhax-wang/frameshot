@@ -1,0 +1,10 @@
+name = "frameshot-processor"
+compatibility_date = "2023-12-01"
+
+# R2 bucket binding
+[[r2_buckets]]
+binding = "THUMBNAILS"
+bucket_name = "frameshot-thumbnails"
+
+[env.production]
+workers_dev = false
