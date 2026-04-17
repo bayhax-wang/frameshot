@@ -52,6 +52,32 @@ const frameUrl = data.image_url;`
 
 export default function Home() {
   const [activeCodeExample, setActiveCodeExample] = useState('curl');
+  const [apiKey, setApiKey] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const generateApiKey = async () => {
+    setIsGenerating(true);
+    try {
+      const response = await fetch('https://frameshot-api.vod-mates.workers.dev/api/v1/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: 'free' }),
+      });
+      const data = await response.json();
+      setApiKey(data.api_key);
+    } catch (err) {
+      alert('Failed to generate API key. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyApiKey = () => {
+    navigator.clipboard.writeText(apiKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <>
@@ -276,12 +302,29 @@ export default function Home() {
               </div>
               
               <div className="mt-12">
-                <a
-                  href="#signup"
-                  className="bg-accent-indigo hover:bg-accent-indigo-dark text-white px-8 py-4 rounded-lg text-lg font-medium transition-colors duration-200"
-                >
-                  Get Your Free API Key
-                </a>
+                {!apiKey ? (
+                  <button
+                    onClick={generateApiKey}
+                    disabled={isGenerating}
+                    className="bg-accent-indigo hover:bg-accent-indigo-dark text-white px-8 py-4 rounded-lg text-lg font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? 'Generating...' : 'Get Your Free API Key'}
+                  </button>
+                ) : (
+                  <div className="bg-background-tertiary border border-border rounded-lg p-6 max-w-lg mx-auto">
+                    <p className="text-text-secondary text-sm mb-2">Your API Key:</p>
+                    <div className="flex items-center gap-3">
+                      <code className="text-accent-indigo font-mono text-lg flex-1 break-all">{apiKey}</code>
+                      <button
+                        onClick={copyApiKey}
+                        className="bg-accent-indigo hover:bg-accent-indigo-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 whitespace-nowrap"
+                      >
+                        {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <p className="text-text-secondary text-xs mt-3">Free tier: 50 API calls/month</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
