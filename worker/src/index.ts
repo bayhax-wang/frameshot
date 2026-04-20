@@ -3,7 +3,7 @@ import { Router, json, error } from 'itty-router';
 export interface Env {
   FRAMESHOT_KEYS: KVNamespace;
   THUMBNAILS: R2Bucket;
-  CONTAINER_URL: string;
+  CONTAINER: Fetcher;
   MAX_FREE_REQUESTS: string;
   MAX_PRO_REQUESTS: string;
   MAX_SCALE_REQUESTS: string;
@@ -279,14 +279,11 @@ router.post('/api/v1/keys', async (request, env: Env) => {
 
 // ============ Frame Extraction ============
 
+// /api/v1/extract — proxy to container worker via Service Binding
+// Container worker handles auth, extraction, R2 upload, and usage tracking
 router.post('/api/v1/extract', async (request, env: Env) => {
   try {
-    const authResult = await authenticate(request, env);
-    if (authResult instanceof Response) {
-      return authResult;
-    }
-
-    const extractRequest: ExtractRequest = {};
+    // Normalize: if JSON body has video_url, rewrite to url for container
     const contentType = request.headers.get('Content-Type') || '';
     let forwardBody: BodyInit;
     let forwardHeaders: Record<string, string> = {
@@ -294,70 +291,35 @@ router.post('/api/v1/extract', async (request, env: Env) => {
     };
 
     if (contentType.includes('application/json')) {
-      // JSON body
       const body = await request.json() as any;
-      if (body.url) extractRequest.url = body.url;
-      if (body.video_url) extractRequest.url = body.video_url;
-      if (body.timestamp) extractRequest.timestamp = body.timestamp;
-      if (body.format) extractRequest.format = body.format;
-      if (body.width) extractRequest.width = body.width;
-
-      // Forward as form data to container
-      const fwd = new FormData();
-      if (extractRequest.url) fwd.append('url', extractRequest.url);
-      if (extractRequest.timestamp) fwd.append('timestamp', String(extractRequest.timestamp));
-      if (extractRequest.format) fwd.append('format', extractRequest.format);
-      if (extractRequest.width) fwd.append('width', String(extractRequest.width));
-      forwardBody = fwd;
+      // Normalize video_url -> url
+      const url = body.url || body.video_url;
+      forwardBody = JSON.stringify({
+        url,
+        timestamp: body.timestamp || 'auto',
+        format: body.format || 'jpg',
+        width: body.width || 1280,
+      });
+      forwardHeaders['Content-Type'] = 'application/json';
     } else {
-      // FormData body (file upload)
-      const formData = await request.formData();
-      const url = formData.get('url');
-      const timestamp = formData.get('timestamp');
-      const format = formData.get('format');
-      const width = formData.get('width');
-      const file = formData.get('file');
-
-      if (url) extractRequest.url = url as string;
-      if (timestamp) extractRequest.timestamp = timestamp as string;
-      if (format) extractRequest.format = format as 'jpg' | 'png' | 'webp';
-      if (width) extractRequest.width = parseInt(width as string);
-      if (file) extractRequest.file = file as File;
-      forwardBody = formData;
+      forwardBody = await request.arrayBuffer();
+      forwardHeaders['Content-Type'] = contentType;
     }
 
-    if (!extractRequest.url && !extractRequest.file) {
-      return corsError(400, 'Either url/video_url or file must be provided');
-    }
-
-    extractRequest.timestamp = extractRequest.timestamp || 'auto';
-    extractRequest.format = extractRequest.format || 'jpg';
-    extractRequest.width = extractRequest.width || 1280;
-
-    const containerResponse = await fetch(env.CONTAINER_URL + '/extract', {
+    const containerResponse = await env.CONTAINER.fetch('https://container/extract', {
       method: 'POST',
       body: forwardBody,
       headers: forwardHeaders,
     });
 
-    if (!containerResponse.ok) {
-      return corsError(containerResponse.status, 'Frame extraction failed');
-    }
-
-    const result = await containerResponse.json() as { thumbnail_url: string };
-
-    // Update usage counter
-    const authHeader = request.headers.get('Authorization')!;
-    const apiKeyStr = authHeader.substring(7);
-    const keyDataStr = await env.FRAMESHOT_KEYS.get(apiKeyStr);
-    const parsedKey: ApiKey = JSON.parse(keyDataStr!);
-    
-    parsedKey.usage += 1;
-    await env.FRAMESHOT_KEYS.put(apiKeyStr, JSON.stringify(parsedKey));
-
-    return corsJson(result);
+    // Pass through the response with CORS
+    const respBody = await containerResponse.text();
+    return new Response(respBody, {
+      status: containerResponse.status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   } catch (err) {
-    console.error('Extract error:', err);
+    console.error('Extract proxy error:', err);
     return corsError(500, 'Internal server error');
   }
 });

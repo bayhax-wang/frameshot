@@ -19,6 +19,11 @@ name = "FRAMESHOT_CONTAINER"
 binding = "THUMBNAILS"
 bucket_name = "frameshot-thumbnails"
 
+# KV namespace for API keys (auth)
+[[kv_namespaces]]
+binding = "FRAMESHOT_KEYS"
+id = "062de15ae7a74683b7513a5777dd8e3c"
+
 # Migrations
 [[migrations]]
 new_sqlite_classes = ["FrameshotContainer"]

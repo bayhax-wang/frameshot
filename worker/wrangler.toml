@@ -17,9 +17,13 @@ id = "062de15ae7a74683b7513a5777dd8e3c"
 binding = "THUMBNAILS"
 bucket_name = "frameshot-thumbnails"
 
+# Service binding to container worker
+[[services]]
+binding = "CONTAINER"
+service = "frameshot-processor"
+
 # Environment variables
 [vars]
-CONTAINER_URL = "https://frameshot-processor.vod-mates.workers.dev"
 MAX_FREE_REQUESTS = "50"
 MAX_PRO_REQUESTS = "5000"
 MAX_SCALE_REQUESTS = "50000"

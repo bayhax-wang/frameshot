@@ -1,94 +1,129 @@
 import { Container, getContainer } from "@cloudflare/containers";
 
 export class FrameshotContainer extends Container {
-  defaultPort = 8080; // Port the container is listening on
-  sleepAfter = "10m"; // Stop the instance if requests not sent for 10 minutes
+  defaultPort = 8080;
+  sleepAfter = "10m";
+}
+
+// Shared auth logic
+async function authenticate(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: 'Missing or invalid API key', status: 401 };
+  }
+
+  const apiKey = authHeader.substring(7);
+  const keyData = await env.FRAMESHOT_KEYS.get(apiKey);
+  
+  if (!keyData) {
+    return { error: 'Invalid API key', status: 401 };
+  }
+
+  const parsedKey = JSON.parse(keyData);
+  
+  const limits = { free: 50, pro: 5000, scale: 50000 };
+  const maxRequests = limits[parsedKey.tier] || 50;
+
+  if (parsedKey.usage >= maxRequests) {
+    return { error: 'Usage limit exceeded', status: 429 };
+  }
+
+  return { key: parsedKey, apiKeyStr: apiKey };
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+function corsJson(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+function corsError(status, message) {
+  return corsJson({ error: message }, status);
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
     
     // Health check
     if (url.pathname === '/health') {
-      return new Response(JSON.stringify({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString() 
-      }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return corsJson({ status: 'ok', timestamp: new Date().toISOString() });
     }
 
-    // Extract frame endpoint
+    // Extract frame endpoint - with auth
     if (url.pathname === '/extract' && request.method === 'POST') {
       try {
-        // Use a session ID for container instance
-        // For simplicity, use a default session for now
+        // Authenticate
+        const authResult = await authenticate(request, env);
+        if (authResult.error) {
+          return corsError(authResult.status, authResult.error);
+        }
+
+        // Forward to container (strip auth header to keep it clean)
         const sessionId = 'default';
-        
-        // Get the container instance
         const containerInstance = getContainer(env.FRAMESHOT_CONTAINER, sessionId);
         
-        // Pass the request to the container instance
         const response = await containerInstance.fetch(request);
         
-        // Process the response and upload to R2 if needed
         if (response.ok) {
           const result = await response.json();
           
           if (result.success && result.image_data) {
             try {
-              // Convert base64 to buffer
               const imageBuffer = Uint8Array.from(atob(result.image_data), c => c.charCodeAt(0));
-              
-              // Upload to R2
               const key = `thumbnails/${result.filename}`;
               await env.THUMBNAILS.put(key, imageBuffer, {
-                httpMetadata: {
-                  contentType: `image/${result.format}`
-                }
+                httpMetadata: { contentType: `image/${result.format}` }
               });
               
-              // Generate public URL using image proxy Worker
               const thumbnailUrl = `https://frameshot-images.vod-mates.workers.dev/${key}`;
+
+              // Update usage counter
+              authResult.key.usage += 1;
+              await env.FRAMESHOT_KEYS.put(authResult.apiKeyStr, JSON.stringify(authResult.key));
               
-              return new Response(JSON.stringify({ 
+              return corsJson({ 
                 thumbnail_url: thumbnailUrl,
                 size: result.size,
                 format: result.format
-              }), {
-                headers: { 'Content-Type': 'application/json' }
               });
             } catch (uploadError) {
-              console.error('R2 upload failed:', uploadError);
-              return new Response(JSON.stringify({ 
-                error: 'Upload to storage failed',
-                details: uploadError.message
-              }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-              });
+              return corsError(500, 'Upload to storage failed: ' + uploadError.message);
             }
           }
           
-          return new Response(JSON.stringify(result), {
-            headers: { 'Content-Type': 'application/json' }
-          });
+          return corsJson(result);
         }
         
-        return response;
+        const errText = await response.text();
+        return corsError(response.status, `Extraction failed: ${errText.slice(0, 200)}`);
         
       } catch (error) {
-        return new Response(JSON.stringify({ 
-          error: 'Container processing failed',
-          details: error.message
-        }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return corsError(500, 'Processing failed: ' + error.message);
       }
     }
+
+    // Also handle extract on /api/v1/extract path for compatibility
+    if (url.pathname === '/api/v1/extract' && request.method === 'POST') {
+      // Rewrite URL to /extract and reprocess
+      const newUrl = new URL(request.url);
+      newUrl.pathname = '/extract';
+      const newRequest = new Request(newUrl.toString(), request);
+      return this.fetch(newRequest, env);
+    }
     
-    return new Response('Not Found', { status: 404 });
+    return corsError(404, 'Not Found');
   },
 };
