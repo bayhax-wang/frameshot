@@ -53,23 +53,57 @@ const frameUrl = data.image_url;`
 export default function Home() {
   const [activeCodeExample, setActiveCodeExample] = useState('curl');
   const [apiKey, setApiKey] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [email, setEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [step, setStep] = useState<'email' | 'code' | 'done'>('email');
+  const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const generateApiKey = async () => {
-    setIsGenerating(true);
+  const API_BASE = 'https://frameshot-api.vod-mates.workers.dev';
+
+  const requestCode = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
     try {
-      const response = await fetch('https://frameshot-api.vod-mates.workers.dev/api/v1/keys', {
+      const res = await fetch(`${API_BASE}/api/v1/keys/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier: 'free' }),
+        body: JSON.stringify({ email }),
       });
-      const data = await response.json();
-      setApiKey(data.api_key);
+      const data = await res.json() as any;
+      if (!res.ok) {
+        setErrorMsg(data.error || 'Failed to send code');
+        return;
+      }
+      setStep('code');
     } catch (err) {
-      alert('Failed to generate API key. Please try again.');
+      setErrorMsg('Network error. Please try again.');
     } finally {
-      setIsGenerating(false);
+      setIsLoading(false);
+    }
+  };
+
+  const verifyAndCreateKey = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verificationCode, tier: 'free' }),
+      });
+      const data = await res.json() as any;
+      if (!res.ok) {
+        setErrorMsg(data.error || 'Verification failed');
+        return;
+      }
+      setApiKey(data.api_key);
+      setStep('done');
+    } catch (err) {
+      setErrorMsg('Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -301,18 +335,66 @@ export default function Home() {
                 </div>
               </div>
               
-              <div className="mt-12">
-                {!apiKey ? (
-                  <button
-                    onClick={generateApiKey}
-                    disabled={isGenerating}
-                    className="bg-accent-indigo hover:bg-accent-indigo-dark text-white px-8 py-4 rounded-lg text-lg font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isGenerating ? 'Generating...' : 'Get Your Free API Key'}
-                  </button>
-                ) : (
-                  <div className="bg-background-tertiary border border-border rounded-lg p-6 max-w-lg mx-auto">
-                    <p className="text-text-secondary text-sm mb-2">Your API Key:</p>
+              <div className="mt-12 max-w-md mx-auto">
+                {errorMsg && (
+                  <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-4 py-3 mb-4 text-sm">
+                    {errorMsg}
+                  </div>
+                )}
+
+                {step === 'email' && (
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && email && requestCode()}
+                      className="flex-1 bg-background-tertiary border border-border rounded-lg px-4 py-4 text-white placeholder-text-secondary focus:outline-none focus:border-accent-indigo transition-colors"
+                    />
+                    <button
+                      onClick={requestCode}
+                      disabled={isLoading || !email}
+                      className="bg-accent-indigo hover:bg-accent-indigo-dark text-white px-8 py-4 rounded-lg text-lg font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {isLoading ? 'Sending...' : 'Get API Key'}
+                    </button>
+                  </div>
+                )}
+
+                {step === 'code' && (
+                  <div>
+                    <p className="text-text-secondary text-sm mb-3">We sent a 6-digit code to <span className="text-white">{email}</span></p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="text"
+                        placeholder="000000"
+                        value={verificationCode}
+                        onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        onKeyDown={(e) => e.key === 'Enter' && verificationCode.length === 6 && verifyAndCreateKey()}
+                        maxLength={6}
+                        className="flex-1 bg-background-tertiary border border-border rounded-lg px-4 py-4 text-white text-center text-2xl tracking-[0.3em] font-mono placeholder-text-secondary focus:outline-none focus:border-accent-indigo transition-colors"
+                      />
+                      <button
+                        onClick={verifyAndCreateKey}
+                        disabled={isLoading || verificationCode.length !== 6}
+                        className="bg-accent-indigo hover:bg-accent-indigo-dark text-white px-8 py-4 rounded-lg text-lg font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      >
+                        {isLoading ? 'Verifying...' : 'Verify'}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => { setStep('email'); setVerificationCode(''); setErrorMsg(''); }}
+                      className="text-text-secondary hover:text-white text-sm mt-3 transition-colors"
+                    >
+                      ← Use a different email
+                    </button>
+                  </div>
+                )}
+
+                {step === 'done' && (
+                  <div className="bg-background-tertiary border border-accent-indigo/30 rounded-lg p-6">
+                    <p className="text-green-400 text-sm mb-3">✓ API key created! Also sent to your email.</p>
                     <div className="flex items-center gap-3">
                       <code className="text-accent-indigo font-mono text-lg flex-1 break-all">{apiKey}</code>
                       <button
@@ -322,7 +404,7 @@ export default function Home() {
                         {copied ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
-                    <p className="text-text-secondary text-xs mt-3">Free tier: 50 API calls/month</p>
+                    <p className="text-text-secondary text-xs mt-3">Free tier · 50 API calls/month</p>
                   </div>
                 )}
               </div>
