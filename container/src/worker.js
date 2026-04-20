@@ -195,10 +195,22 @@ export default {
         const sessionId = 'default';
         const containerInstance = getContainer(env.FRAMESHOT_CONTAINER, sessionId);
 
+        // Normalize body: video_url → url for container express
+        let forwardBody = request.body;
+        const ct = request.headers.get('Content-Type') || '';
+        if (ct.includes('application/json')) {
+          const body = await request.json();
+          if (body.video_url && !body.url) {
+            body.url = body.video_url;
+            delete body.video_url;
+          }
+          forwardBody = JSON.stringify(body);
+        }
+
         const clonedRequest = new Request('https://container/extract', {
           method: 'POST',
-          headers: request.headers,
-          body: request.body,
+          headers: { 'Content-Type': ct || 'application/json' },
+          body: forwardBody,
         });
         const response = await containerInstance.fetch(clonedRequest);
 

@@ -56,12 +56,13 @@ app.post('/extract', upload.single('file'), async (req, res) => {
   let outputPath = null;
   
   try {
-    const { url, timestamp = 'auto', format = 'jpg', width = 1280 } = req.body;
+    const { url, video_url, timestamp = 'auto', format = 'jpg', width = 1280 } = req.body;
+    const videoUrl = url || video_url;
     const seekTime = timestamp === 'auto' ? '0' : String(timestamp);
     const outputFilename = `${uuidv4()}.${format}`;
     outputPath = `/tmp/frameshot/${outputFilename}`;
 
-    if (url) {
+    if (videoUrl) {
       // ffmpeg reads URL directly with -ss before -i (input seek)
       // Network options: timeout, reconnect for reliability with signed URLs
       const args = [
@@ -70,7 +71,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
         '-reconnect_delay_max', '5',
         '-timeout', '20000000',  // 20s in microseconds
         '-ss', seekTime,
-        '-i', url,
+        '-i', videoUrl,
         '-vframes', '1',
         '-vf', `scale=${width}:-1`,
         '-f', 'image2',
@@ -93,7 +94,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
       await runFfmpeg(args, 30000);
 
     } else {
-      return res.status(400).json({ error: 'Either url or file must be provided' });
+      return res.status(400).json({ error: 'Either url/video_url or file must be provided' });
     }
 
     const thumbnailBuffer = await fs.readFile(outputPath);
