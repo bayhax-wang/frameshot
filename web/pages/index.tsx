@@ -6,7 +6,7 @@ import FeatureCard from '../components/FeatureCard';
 import PricingCard from '../components/PricingCard';
 
 const codeExamples = {
-  curl: `curl -X POST "https://frameshot-api.vod-mates.workers.dev/api/v1/extract" \\
+  curl: `curl -X POST "https://frameshot-processor.vod-mates.workers.dev/extract" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -18,7 +18,7 @@ const codeExamples = {
   python: `import requests
 
 response = requests.post(
-    "https://frameshot-api.vod-mates.workers.dev/api/v1/extract",
+    "https://frameshot-processor.vod-mates.workers.dev/extract",
     headers={"Authorization": "Bearer YOUR_API_KEY"},
     json={
         "video_url": "https://example.com/video.mp4",
@@ -31,7 +31,7 @@ data = response.json()
 frame_url = data["image_url"]`,
 
   javascript: `const response = await fetch(
-  "https://frameshot-api.vod-mates.workers.dev/api/v1/extract",
+  "https://frameshot-processor.vod-mates.workers.dev/extract",
   {
     method: "POST",
     headers: {

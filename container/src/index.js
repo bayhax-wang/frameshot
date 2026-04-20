@@ -62,8 +62,13 @@ app.post('/extract', upload.single('file'), async (req, res) => {
     outputPath = `/tmp/frameshot/${outputFilename}`;
 
     if (url) {
-      // ffmpeg reads URL directly with -ss before -i (input seek = fast, downloads only what's needed)
+      // ffmpeg reads URL directly with -ss before -i (input seek)
+      // Network options: timeout, reconnect for reliability with signed URLs
       const args = [
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
+        '-timeout', '20000000',  // 20s in microseconds
         '-ss', seekTime,
         '-i', url,
         '-vframes', '1',
@@ -72,7 +77,7 @@ app.post('/extract', upload.single('file'), async (req, res) => {
         '-y',
         outputPath
       ];
-      await runFfmpeg(args, 30000);
+      await runFfmpeg(args, 60000);  // 60s timeout for large remote videos
 
     } else if (req.file) {
       localVideoPath = req.file.path;
