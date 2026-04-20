@@ -306,17 +306,25 @@ router.post('/api/v1/extract', async (request, env: Env) => {
       forwardHeaders['Content-Type'] = contentType;
     }
 
-    const containerResponse = await env.CONTAINER.fetch('https://container/extract', {
+    // Pass persist param through query string
+    const incomingUrl = new URL(request.url);
+    const persist = incomingUrl.searchParams.get('persist');
+    const containerUrl = new URL('https://container/extract');
+    if (persist) containerUrl.searchParams.set('persist', persist);
+
+    const containerResponse = await env.CONTAINER.fetch(containerUrl.toString(), {
       method: 'POST',
       body: forwardBody,
       headers: forwardHeaders,
     });
 
-    // Pass through the response with CORS
-    const respBody = await containerResponse.text();
-    return new Response(respBody, {
+    // Pass through the response with CORS headers added
+    const respHeaders = new Headers(containerResponse.headers);
+    Object.entries(corsHeaders).forEach(([k, v]) => respHeaders.set(k, v));
+
+    return new Response(containerResponse.body, {
       status: containerResponse.status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: respHeaders,
     });
   } catch (err) {
     console.error('Extract proxy error:', err);

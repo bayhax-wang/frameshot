@@ -29,5 +29,9 @@ id = "062de15ae7a74683b7513a5777dd8e3c"
 new_sqlite_classes = ["FrameshotContainer"]
 tag = "v1"
 
+# Cron: keepalive every 5 min + R2 cleanup every hour
+[triggers]
+crons = ["*/5 * * * *", "0 * * * *"]
+
 [env.production]
 workers_dev = false
