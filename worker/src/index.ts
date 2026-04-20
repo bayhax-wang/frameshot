@@ -286,23 +286,48 @@ router.post('/api/v1/extract', async (request, env: Env) => {
       return authResult;
     }
 
-    const formData = await request.formData();
     const extractRequest: ExtractRequest = {};
-    
-    const url = formData.get('url');
-    const timestamp = formData.get('timestamp');
-    const format = formData.get('format');
-    const width = formData.get('width');
-    const file = formData.get('file');
+    const contentType = request.headers.get('Content-Type') || '';
+    let forwardBody: BodyInit;
+    let forwardHeaders: Record<string, string> = {
+      'Authorization': request.headers.get('Authorization') || '',
+    };
 
-    if (url) extractRequest.url = url as string;
-    if (timestamp) extractRequest.timestamp = timestamp as string;
-    if (format) extractRequest.format = format as 'jpg' | 'png' | 'webp';
-    if (width) extractRequest.width = parseInt(width as string);
-    if (file) extractRequest.file = file as File;
+    if (contentType.includes('application/json')) {
+      // JSON body
+      const body = await request.json() as any;
+      if (body.url) extractRequest.url = body.url;
+      if (body.video_url) extractRequest.url = body.video_url;
+      if (body.timestamp) extractRequest.timestamp = body.timestamp;
+      if (body.format) extractRequest.format = body.format;
+      if (body.width) extractRequest.width = body.width;
+
+      // Forward as form data to container
+      const fwd = new FormData();
+      if (extractRequest.url) fwd.append('url', extractRequest.url);
+      if (extractRequest.timestamp) fwd.append('timestamp', String(extractRequest.timestamp));
+      if (extractRequest.format) fwd.append('format', extractRequest.format);
+      if (extractRequest.width) fwd.append('width', String(extractRequest.width));
+      forwardBody = fwd;
+    } else {
+      // FormData body (file upload)
+      const formData = await request.formData();
+      const url = formData.get('url');
+      const timestamp = formData.get('timestamp');
+      const format = formData.get('format');
+      const width = formData.get('width');
+      const file = formData.get('file');
+
+      if (url) extractRequest.url = url as string;
+      if (timestamp) extractRequest.timestamp = timestamp as string;
+      if (format) extractRequest.format = format as 'jpg' | 'png' | 'webp';
+      if (width) extractRequest.width = parseInt(width as string);
+      if (file) extractRequest.file = file as File;
+      forwardBody = formData;
+    }
 
     if (!extractRequest.url && !extractRequest.file) {
-      return corsError(400, 'Either url or file must be provided');
+      return corsError(400, 'Either url/video_url or file must be provided');
     }
 
     extractRequest.timestamp = extractRequest.timestamp || 'auto';
@@ -311,10 +336,8 @@ router.post('/api/v1/extract', async (request, env: Env) => {
 
     const containerResponse = await fetch(env.CONTAINER_URL + '/extract', {
       method: 'POST',
-      body: formData,
-      headers: {
-        'Authorization': request.headers.get('Authorization') || '',
-      }
+      body: forwardBody,
+      headers: forwardHeaders,
     });
 
     if (!containerResponse.ok) {
