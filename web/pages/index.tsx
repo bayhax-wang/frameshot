@@ -60,7 +60,7 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const API_BASE = 'https://frameshot-api.vod-mates.workers.dev';
+  const API_BASE = 'https://frameshot-processor.vod-mates.workers.dev';
 
   const requestCode = async () => {
     setIsLoading(true);
