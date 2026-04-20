@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const ffmpeg = require('fluent-ffmpeg');
+const { execFile } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs').promises;
 const path = require('path');
@@ -8,26 +8,22 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Ensure tmp dir exists
+fs.mkdir('/tmp/frameshot', { recursive: true }).catch(() => {});
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: '/tmp/frameshot',
   filename: (req, file, cb) => {
-    const uniqueName = uuidv4() + path.extname(file.originalname);
-    cb(null, uniqueName);
+    cb(null, uuidv4() + path.extname(file.originalname));
   }
 });
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // Check if file is video
-    const videoMimeTypes = [
-      'video/mp4', 'video/avi', 'video/mov', 'video/wmv',
-      'video/flv', 'video/webm', 'video/mkv'
-    ];
-    
-    if (videoMimeTypes.includes(file.mimetype)) {
+    if (file.mimetype.startsWith('video/')) {
       cb(null, true);
     } else {
       cb(new Error('Only video files are allowed'), false);
@@ -38,65 +34,71 @@ const upload = multer({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Extract frame endpoint
+// Run ffmpeg as child process with timeout
+function runFfmpeg(args, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const proc = execFile('ffmpeg', args, { timeout: timeoutMs }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`ffmpeg failed: ${stderr || error.message}`));
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+}
+
 app.post('/extract', upload.single('file'), async (req, res) => {
-  let videoPath = null;
+  let localVideoPath = null;
   let outputPath = null;
   
   try {
     const { url, timestamp = 'auto', format = 'jpg', width = 1280 } = req.body;
-    
-    // Handle URL or uploaded file
+    const seekTime = timestamp === 'auto' ? '0' : String(timestamp);
+    const outputFilename = `${uuidv4()}.${format}`;
+    outputPath = `/tmp/frameshot/${outputFilename}`;
+
     if (url) {
-      // Download video from URL
-      const response = await fetch(url);
-      if (!response.ok) {
-        return res.status(400).json({ error: 'Failed to download video from URL' });
-      }
-      
-      const buffer = await response.arrayBuffer();
-      videoPath = `/tmp/frameshot/${uuidv4()}.mp4`;
-      await fs.writeFile(videoPath, Buffer.from(buffer));
+      // ffmpeg reads URL directly with -ss before -i (input seek = fast, downloads only what's needed)
+      const args = [
+        '-ss', seekTime,
+        '-i', url,
+        '-vframes', '1',
+        '-vf', `scale=${width}:-1`,
+        '-f', 'image2',
+        '-y',
+        outputPath
+      ];
+      await runFfmpeg(args, 30000);
+
     } else if (req.file) {
-      videoPath = req.file.path;
+      localVideoPath = req.file.path;
+      const args = [
+        '-ss', seekTime,
+        '-i', localVideoPath,
+        '-vframes', '1',
+        '-vf', `scale=${width}:-1`,
+        '-f', 'image2',
+        '-y',
+        outputPath
+      ];
+      await runFfmpeg(args, 30000);
+
     } else {
       return res.status(400).json({ error: 'Either url or file must be provided' });
     }
 
-    // Generate output filename
-    const outputFilename = `${uuidv4()}.${format}`;
-    outputPath = `/tmp/frameshot/${outputFilename}`;
-
-    // Extract frame with ffmpeg
-    await new Promise((resolve, reject) => {
-      let command = ffmpeg(videoPath)
-        .screenshots({
-          count: 1,
-          timemarks: timestamp === 'auto' ? ['0'] : [timestamp],
-          filename: outputFilename,
-          folder: '/tmp/frameshot',
-          size: `${width}x?`
-        })
-        .on('end', resolve)
-        .on('error', reject);
-    });
-
-    // Read the generated thumbnail
     const thumbnailBuffer = await fs.readFile(outputPath);
-    
-    // Return the image buffer as base64
     const thumbnailBase64 = thumbnailBuffer.toString('base64');
     
     res.json({ 
       success: true,
       image_data: thumbnailBase64,
       filename: outputFilename,
-      format: format,
+      format,
       size: thumbnailBuffer.length
     });
 
@@ -104,17 +106,10 @@ app.post('/extract', upload.single('file'), async (req, res) => {
     console.error('Extract error:', error);
     res.status(500).json({ error: 'Frame extraction failed', details: error.message });
   } finally {
-    // Clean up temporary files
     try {
-      if (videoPath && req.body.url) {
-        await fs.unlink(videoPath);
-      }
-      if (outputPath) {
-        await fs.unlink(outputPath);
-      }
-    } catch (cleanupError) {
-      console.error('Cleanup error:', cleanupError);
-    }
+      if (localVideoPath) await fs.unlink(localVideoPath).catch(() => {});
+      if (outputPath) await fs.unlink(outputPath).catch(() => {});
+    } catch (e) {}
   }
 });
 
